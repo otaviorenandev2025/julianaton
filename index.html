@@ -272,8 +272,7 @@ function startFlow(){
   setQuickButtons([
     {label:'👏 Sou comerciante', value:'Sou comerciante'},
     {label:'🚀 Sou autônomo', value:'Sou autônomo'},
-    {label:'🏢 Sou empresário', value:'Sou empresário'},
-    {label:'✍️ Digite seu nome', value:'Digite seu nome'}
+    {label:'🏢 Sou empresário', value:'Sou empresário'},    
   ]);
   stage='categoria';
 }
@@ -295,9 +294,10 @@ function askModel(){
   addBotMsg('Perfeito! Atendo <b>'+sanitize(lead.cidade)+'</b> com frete grátis. ✅<br><br><b>Qual modelo você quer garantir com 0,57% hoje?</b><br><small>Todos sem aluguel nunca!</small>',400);
   setTimeout(()=>{
     setQuickButtons([
-      {label:'💳 T1 - Essencial', value:'T1'},
-      {label:'🔥 T2+ - Mais Vendida', value:'T2+', primary:true},
-      {label:'🤖 T3 Smart Android', value:'T3 Smart'}
+      {label:'T1 - Essencial', value:'T1'},
+      {label:'T2+ - Mais Vendida', value:'T2+', primary:true},
+      {label:'T3 - A maquininha com comprovante impresso', value: 'T3', primary:true},
+      {label:'T3 Smart Android', value:'T3 Smart'}
     ]);
   },600);
   stage='modelo';
@@ -317,10 +317,9 @@ function sendChat(){
     handleJaGaranti();
     return;
   }
-  if(low.includes('enviar comprovante')){
+  if(low.includes('enviar comprovante') || low.includes('abrir galeria')){
     addUserMsg(txt); input.value='';
-    const inp = document.getElementById('comprovanteInput');
-    if(inp) inp.click();
+    abrirGerenciadorComprovante();
     return;
   }
   if(low.includes('falar com juliana')){
@@ -329,15 +328,75 @@ function sendChat(){
     return;
   }
   if(stage==='comprovante'){
+    // se já enviou comprovante e agora é só agradecimento, não tratar como comprovante de novo
+    if(lead.status && lead.status.startsWith('COMPROVANTE_') && isMensagemAgradecimento(txt)){
+      addUserMsg(txt); input.value='';
+      instrucoesAppTon();
+      return;
+    }
+    // se ainda não enviou e é agradecimento curto, ignora e pede comprovante de verdade
+    if(isMensagemAgradecimento(txt) && !lead.comprovante){
+      addUserMsg(txt); input.value='';
+      addBotMsg('😉 Entendi, '+sanitize(lead.nome||'')+'! Mas preciso do <b>comprovante Pix</b> mesmo (foto, print ou código) pra liberar sua ativação com prioridade. Pode enviar aqui? 📎',500);
+      setQuickButtons([{label:'📎 Abrir galeria e selecionar comprovante', value:'enviar_comprovante', primary:true}]);
+      return;
+    }
+
     addUserMsg(txt); input.value='';
-    lead.comprovante = txt.substring(0,200);
+    lead.comprovante = txt.substring(0,300);
     lead.status = 'COMPROVANTE_TEXTO_ENVIADO';
-    addBotMsg('✅ <b>Recebido, '+sanitize(lead.nome)+'!</b> Anotei seu comprovante:<br><i>"'+sanitize(lead.comprovante)+'"</i><br><br>Já encaminhei pra Juliana no WhatsApp com todos os seus dados. Ela confirma em até 30 min! 💚',600);
+    lead.comprovanteData = new Date().toISOString();
+    addBotMsg('✅ <b>Recebido, '+sanitize(lead.nome)+'!</b> Anotei seu comprovante:<br><i>"'+sanitize(lead.comprovante)+'"</i><br><br>Já encaminhei pra Juliana no WhatsApp com todos os seus dados.',600);
     salvarComprovanteNoSheets();
     notificarJulianaComprovante();
-    setQuickButtons([{label:'✅ Obrigado, Juliana!'}]);
+    setTimeout(()=> instrucoesAppTon(), 900);
     return;
   }
+
+  // NOVO STAGE: app_ton
+  if(stage==='app_ton'){
+    const low2 = txt.toLowerCase();
+    addUserMsg(txt); input.value='';
+
+    if(low2.includes('ja baixei') || low2.includes('já baixei') || low2.includes('cadastrei')){
+      addBotMsg('🎉 <b>Perfeito, '+sanitize(lead.nome||'')+'!</b><br><br>Sua maquininha Ton <b>'+sanitize(lead.modelo||'')+'</b> já está com ativação prioritária!<br><br>A Juliana vai te chamar no WhatsApp <b>(48) 99829-0105</b> em até 30 min pra confirmar e te mandar o código de ativação. 💚<br><br>Qualquer dúvida sobre Pix ou app, me chama aqui!',700);
+      setQuickButtons([{label:'✅ Perfeito!'}, {label:'📞 Falar com Juliana', value:'falar_juliana'}]);
+      lead.status='APP_TON_OK';
+      salvarComprovanteNoSheets();
+      return;
+    }
+    if(low2.includes('link') && low2.includes('app')){
+      const os2 = getDeviceOS();
+      addBotMsg('📲 <b>Link oficial do App Ton pro seu '+(os2==='ios'?'iPhone':os2==='android'?'Android':'celular')+':</b><br><br><div style="margin:8px 0"><button onclick="abrirLojaAppTon()" style="background:#00ff88;color:#000;padding:12px 18px;border-radius:24px;border:none;font-weight:900;width:100%;cursor:pointer">📲 Abrir Loja Agora →</button></div>👉 Android: <a href="https://play.google.com/store/apps/details?id=br.com.stone.ton" target="_blank">Play Store</a><br>👉 iPhone: <a href="https://apps.apple.com/br/app/ton/id1499651184" target="_blank">App Store</a><br><br>Baixa, abre sua conta e cadastra sua chave Pix em Perfil > Chaves Pix 😉',600);
+      abrirLojaAppTon();
+      setQuickButtons([
+        {label:'✅ Já baixei e cadastrei Pix', value:'ja_baixei_app', primary:true},
+        {label:'❓ Como cadastra Pix?', value:'como_cadastra_pix'}
+      ]);
+      return;
+    }
+    if(low2.includes('como') && low2.includes('pix') || low2.includes('cadastra')){
+      addBotMsg('🔑 <b>Como cadastrar chave Pix na Ton:</b><br><br>1. Abra o app Ton<br>2. Toque em <b>Perfil</b> (canto inferior)<br>3. Vá em <b>Chaves Pix</b><br>4. Clique em <b>Cadastrar chave</b><br>5. Escolha CPF, celular ou e-mail<br>6. Confirme e pronto! ✅<br><br>Seu dinheiro das vendas cai na hora nessa chave! ⚡',700);
+      setQuickButtons([
+        {label:'✅ Já cadastrei!', value:'ja_baixei_app', primary:true},
+        {label:'📞 Falar com Juliana', value:'falar_juliana'}
+      ]);
+      return;
+    }
+    if(low2.includes('falar com juliana')){
+      window.open('https://wa.me/'+CONFIG.julianaWhatsApp+'?text=Oi Juliana, sou '+encodeURIComponent(lead.nome||'cliente')+' do site, já enviei comprovante da '+encodeURIComponent(lead.modelo||'Ton')+' e preciso de ajuda com o app Pix','_blank');
+      return;
+    }
+    // agradecimento final
+    if(isMensagemAgradecimento(txt)){
+      addBotMsg('💚 Por nada, '+sanitize(lead.nome||'')+'! Qualquer coisa me chama aqui ou fala com a Juliana no <b>(48) 99829-0105</b>. Sua Ton tá garantida com <b>0,57%</b>! 🚀',500);
+      return;
+    }
+    // fallback
+    addBotMsg('Entendi! Se precisar de ajuda pra baixar o app ou cadastrar o Pix, me fala. A Juliana também tá no WhatsApp <b>(48) 99829-0105</b> pra te ajudar! 💚',500);
+    return;
+  }
+
 
   // FLUXO PRINCIPAL EDITADO CONFORME PEDIDO
   addUserMsg(txt);
@@ -472,31 +531,209 @@ async function fecharVenda(){
   setQuickButtons([{label:'✅ Já garanti minha Ton'}, {label:'❓ Falar com Juliana'}]);
 }
 
+
+// === GERENCIADOR DE ARQUIVOS - LÓGICA REVISADA ===
+let comprovanteInputRef = null;
+
+function garantirInputComprovante(){
+  let input = document.getElementById('comprovanteInput');
+  if(!input){
+    input = document.createElement('input');
+    input.type='file';
+    input.id='comprovanteInput';
+    input.accept='image/*,application/pdf';
+    input.style.display='none';
+    input.addEventListener('change', handleArquivoSelecionado);
+    document.body.appendChild(input);
+  }
+  comprovanteInputRef = input;
+  return input;
+}
+
+function abrirGerenciadorComprovante(){
+  const input = garantirInputComprovante();
+  // reseta para permitir selecionar mesmo arquivo 2x
+  input.value = '';
+  // pequeno delay para garantir que está no DOM e animação do chat terminou
+  setTimeout(()=> input.click(), 150);
+}
+
+function handleArquivoSelecionado(e){
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  processarArquivoComprovante(file);
+}
+
+function processarArquivoComprovante(file){
+  // validação
+  const maxMB = 10;
+  if(file.size > maxMB * 1024 * 1024){
+    addBotMsg('⚠️ Arquivo muito grande ('+(file.size/1024/1024).toFixed(1)+'MB). Envie até '+maxMB+'MB por favor.');
+    return;
+  }
+  addUserMsg('📎 Comprovante enviado: '+sanitize(file.name)+' ('+(file.size/1024).toFixed(0)+'KB)');
+  
+  // preview se for imagem
+  if(file.type.startsWith('image/')){
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      addBotMsg('<div style="margin:6px 0"><img src="'+ev.target.result+'" style="max-width:220px;border-radius:8px;border:1px solid #ddd"><br><small>'+sanitize(file.name)+'</small></div>',300);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  lead.comprovante = file.name + ' (' + (file.size/1024).toFixed(0)+'KB) - '+file.type;
+  lead.comprovanteFileName = file.name;
+  lead.status = 'COMPROVANTE_ENVIADO';
+  lead.comprovanteData = new Date().toISOString();
+  updateProgress(100);
+
+  setTimeout(()=>{
+    addBotMsg('✅ <b>Comprovante recebido, '+sanitize(lead.nome||'!')+'</b><br><br>Já encaminhei tudo pra <b>Juliana</b> no WhatsApp <b>(48) 99829-0105</b>. Ela vai confirmar seu pagamento com taxa <b>0,57%</b> garantida em até 30 minutos! 💚',600);
+    salvarComprovanteNoSheets();
+    notificarJulianaComprovante();
+  }, file.type.startsWith('image/') ? 900 : 400);
+
+  // após confirmar comprovante, vai para instruções do app
+  setTimeout(()=>{
+    instrucoesAppTon();
+  }, file.type.startsWith('image/') ? 2200 : 1600);
+}
+
+function isMensagemAgradecimento(txt){
+  const t = (txt||'').toLowerCase().trim();
+  const agradecimentos = ['obrigado','obrigada','valeu','vlw','thanks','thank you','ok','okay','beleza','show','top','perfeito','entendido'];
+  // se for muito curto (até 25 chars) e contém agradecimento, é agradecimento
+  if(t.length <= 30 && agradecimentos.some(a=> t.includes(a))) return true;
+  return false;
+}
+
+function getDeviceOS(){
+  const ua = navigator.userAgent || navigator.vendor || window.opera;
+  if(/android/i.test(ua)) return 'android';
+  if(/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+  return 'other';
+}
+
+function abrirLojaAppTon(){
+  const os = getDeviceOS();
+  const linkAndroid = 'https://play.google.com/store/apps/details?id=br.com.stone.ton';
+  const linkIOS = 'https://apps.apple.com/br/app/ton/id1499651184';
+  const link = os === 'ios' ? linkIOS : linkAndroid;
+  window.open(link, '_blank');
+  try{
+    fetch(CONFIG.googleSheetsWebhook, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      nome: lead.nome, whatsapp: lead.whatsapp, modeloEscolhido: lead.modelo,
+      cidade: lead.cidade, evento: 'APP_TON_LINK_CLICADO_'+os.toUpperCase(),
+      origem: lead.origem, dataCliente: new Date().toLocaleString('pt-BR')
+    })});
+  }catch(e){}
+}
+
+function instrucoesAppTon(){
+
+  stage='app_ton';
+  updateProgress(100);
+  const nome = sanitize(lead.nome||'');
+  const os = getDeviceOS();
+  const labelLoja = os === 'ios' ? '📲 Baixar App Ton na App Store' : (os === 'android' ? '📲 Baixar App Ton na Play Store' : '📲 Baixar App Ton');
+  const linkAndroid = 'https://play.google.com/store/apps/details?id=br.com.stone.ton';
+  const linkIOS = 'https://apps.apple.com/br/app/ton/id1499651184';
+
+  addBotMsg(
+    '✅ <b>Próximo passo super importante, '+nome+'!</b><br><br>'+
+    'Para sua Ton já sair funcionando e seu Pix cair na hora, faz assim agora:<br><br>'+
+    '<b>1️⃣ Baixe o app da Ton:</b><br>'+
+    '<div style="margin:10px 0"><button onclick="abrirLojaAppTon()" id="btnBaixarAppTon" style="background:#00ff88;color:#000;padding:12px 18px;border-radius:24px;border:none;font-weight:900;width:100%;cursor:pointer;font-size:14px">'+labelLoja+' →</button></div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:8px"><a href="'+linkAndroid+'" target="_blank" style="flex:1;text-align:center;background:#fff;border:1px solid #ddd;padding:8px 10px;border-radius:18px;text-decoration:none;color:#111;font-weight:700;font-size:12px">🤖 Android</a><a href="'+linkIOS+'" target="_blank" style="flex:1;text-align:center;background:#fff;border:1px solid #ddd;padding:8px 10px;border-radius:18px;text-decoration:none;color:#111;font-weight:700;font-size:12px">🍎 iPhone</a></div>'+
+    '<small>Detectamos: '+(os==='ios'?'iPhone':os==='android'?'Android':'seu aparelho')+' • Toque no botão verde pra ir direto pra loja</small><br><br>'+
+    '<b>2️⃣ Abra sua conta no app</b> (se ainda não tem):<br>É rapidinho, com seu CPF e dados. Leva 2 minutos.<br><br>'+
+    '<b>3️⃣ Cadastre sua chave Pix no app:</b><br>App Ton > Perfil > Chaves Pix > Cadastrar chave<br>Assim você já recebe suas vendas na hora! ⚡<br><br>'+
+    '<small>💡 Dica da Juliana: cadastre CPF ou celular como chave Pix pra facilitar.</small>',
+    800
+  );
+  setTimeout(()=>{
+    addBotMsg(
+      'Me avisa aqui quando baixar e cadastrar? Já deixo tudo pronto pra ativar sua maquininha com <b>taxa 0,57%</b> garantida! 💚<br><br>'+
+      'Se precisar de ajuda pra cadastrar a chave Pix, me fala que te guio passo a passo!',
+      700
+    );
+    setQuickButtons([
+      {label:'✅ Já baixei e cadastrei Pix', value:'ja_baixei_app', primary:true},
+      {label:'📲 Me manda link do app', value:'link_app'},
+      {label:'❓ Como cadastra Pix?', value:'como_cadastra_pix'},
+      {label:'📞 Falar com Juliana', value:'falar_juliana'}
+    ]);
+  }, 1200);
+}
+
+
+function configurarDragDropComprovante(){
+  const chatMessages = document.getElementById('chatMessages');
+  if(!chatMessages || chatMessages.dataset.dragConfigured) return;
+  chatMessages.dataset.dragConfigured = '1';
+  
+  ['dragenter','dragover'].forEach(evt=>{
+    chatMessages.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      if(stage==='comprovante'){
+        chatMessages.style.outline='2px dashed #00ff88';
+        chatMessages.style.outlineOffset='-4px';
+      }
+    });
+  });
+  ['dragleave','drop'].forEach(evt=>{
+    chatMessages.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      chatMessages.style.outline='none';
+    });
+  });
+  chatMessages.addEventListener('drop', (e)=>{
+    if(stage!=='comprovante') return;
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file) processarArquivoComprovante(file);
+  });
+}
+
+function adicionarBotaoClipe(){
+  const area = document.querySelector('.chat-input-area');
+  if(!area || document.getElementById('btnClipeComprovante')) return;
+  const btn = document.createElement('button');
+  btn.id='btnClipeComprovante';
+  btn.type='button';
+  btn.innerHTML='📎';
+  btn.title='Enviar comprovante';
+  btn.style.cssText='width:38px;height:38px;border-radius:50%;border:1px solid #ddd;background:#fff;cursor:pointer;font-size:18px;display:grid;place-items:center;';
+  btn.onclick = (e)=>{
+    e.preventDefault();
+    if(stage==='comprovante'){
+      abrirGerenciadorComprovante();
+    } else {
+      addBotMsg('Para enviar o comprovante, clique em <b>✅ Já garanti minha Ton</b> primeiro. Assim eu libero o envio com prioridade! 😉');
+    }
+  };
+  area.insertBefore(btn, area.firstChild);
+}
+
 function handleJaGaranti(){
-  addBotMsg('🎉 <b>Parabéns pela compra!</b> Você fez uma ótima escolha!<br><br>📸 <b>Me envia aqui o comprovante do pagamento Pix</b> (foto ou código) pra eu liberar sua ativação com <b>prioridade máxima</b> e te acompanhar até chegar! 🚀<br><br><small>Pode arrastar a imagem aqui ou clicar no clipe 📎</small>',600);
+  stage='comprovante';
+  garantirInputComprovante();
+  configurarDragDropComprovante();
+  adicionarBotaoClipe();
+
+  addBotMsg('🎉 <b>Parabéns pela compra!</b> Você fez uma ótima escolha!<br><br>📸 <b>Me envia aqui o comprovante do pagamento Pix</b> (foto ou print) pra eu liberar sua ativação com <b>prioridade máxima</b> e te acompanhar até chegar! 🚀<br><br><small>Você pode:<br>• Clicar no botão abaixo para abrir a galeria<br>• Arrastar a imagem aqui pra dentro do chat<br>• Ou clicar no clipe 📎 na barra de mensagem</small>',600);
+  
   setQuickButtons([
-    {label:'📎 Enviar comprovante', value:'enviar_comprovante'},
+    {label:'📎 Abrir galeria e selecionar comprovante', value:'enviar_comprovante', primary:true},
     {label:'📞 Falar com Juliana', value:'falar_juliana'}
   ]);
-  if(!document.getElementById('comprovanteInput')){
-    const fileInput = document.createElement('input');
-    fileInput.type='file'; fileInput.id='comprovanteInput'; fileInput.accept='image/*,.pdf'; fileInput.style.display='none';
-    fileInput.onchange=(e)=>{
-      const file = e.target.files[0];
-      if(file){
-        addUserMsg('📎 Comprovante enviado: '+file.name);
-        lead.comprovante = file.name + ' (' + (file.size/1024).toFixed(0)+'KB)';
-        lead.status = 'COMPROVANTE_ENVIADO';
-        updateProgress(100);
-        addBotMsg('✅ <b>Comprovante recebido, '+sanitize(lead.nome)+'!</b><br><br>Já encaminhei tudo pra <b>Juliana</b> no WhatsApp <b>(48) 99829-0105</b>. Ela vai confirmar seu pagamento e ativar sua maquininha com taxa <b>0,57%</b> garantida em até 30 minutos! 💚<br><br>Seu código de ativação chega no seu WhatsApp.',800);
-        salvarComprovanteNoSheets();
-        notificarJulianaComprovante();
-      }
-    };
-    document.body.appendChild(fileInput);
-  }
-  stage='comprovante';
+
+  // ABRE AUTOMATICAMENTE o gerenciador de arquivos após mostrar a mensagem
+  setTimeout(()=>{
+    abrirGerenciadorComprovante();
+  }, 700);
 }
+
 function salvarComprovanteNoSheets(){
   const payload = {
     nome: lead.nome || '',
@@ -515,8 +752,19 @@ function salvarComprovanteNoSheets(){
 }
 
 function notificarJulianaComprovante(){
-  const msg = '🧾 *COMPROVANTE PIX RECEBIDO - SITE TON*%0A%0A👤 *Cliente:* '+encodeURIComponent(lead.nome)+'%0A🏷️ *Categoria:* '+encodeURIComponent(lead.categoria)+'%0A📍 *Cidade:* '+encodeURIComponent(lead.cidade)+'%0A📱 *Modelo:* '+encodeURIComponent(lead.modelo)+'%0A📞 *WhatsApp:* '+encodeURIComponent(lead.whatsapp)+'%0A🧾 *Comprovante:* '+encodeURIComponent(lead.comprovante||'Texto enviado')+'%0A🔗 *Link:* '+encodeURIComponent(lead.link)+'%0A🕒 *Data:* '+encodeURIComponent(lead.data)+'%0A%0A_Cliente enviou comprovante Pix! Confirma o pagamento e ativa com prioridade!_';
+  const appLinks = '📲 *INSTRUÇÃO APP ENVIADA:*%0A✅ Cliente orientado a baixar App Ton e cadastrar chave Pix%0A• Android: https://play.google.com/store/apps/details?id=br.com.stone.ton%0A• iPhone: https://apps.apple.com/br/app/ton/id1499651184%0A• Passos: App > Perfil > Chaves Pix > Cadastrar';
+  const msg = '🧾 *COMPROVANTE PIX RECEBIDO - SITE TON*%0A%0A👤 *Cliente:* '+encodeURIComponent(lead.nome)+'%0A🏷️ *Categoria:* '+encodeURIComponent(lead.categoria)+'%0A📍 *Cidade:* '+encodeURIComponent(lead.cidade)+'%0A📱 *Modelo:* '+encodeURIComponent(lead.modelo)+'%0A📞 *WhatsApp:* '+encodeURIComponent(lead.whatsapp)+'%0A🧾 *Comprovante:* '+encodeURIComponent(lead.comprovante||'Texto enviado')+'%0A🔗 *Link:* '+encodeURIComponent(lead.link)+'%0A🕒 *Data:* '+encodeURIComponent(lead.data)+'%0A%0A'+appLinks+'%0A%0A_Cliente enviou comprovante Pix! Confirma o pagamento e ativa com prioridade! Já foi instruído a baixar o App Ton e cadastrar Pix._';
   window.open('https://wa.me/'+CONFIG.julianaWhatsApp+'?text='+msg, '_blank');
+  
+  // Salva também evento de app instruído
+  try{
+    fetch(CONFIG.googleSheetsWebhook, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      nome: lead.nome, whatsapp: lead.whatsapp, modeloEscolhido: lead.modelo,
+      cidade: lead.cidade, evento: 'APP_TON_INSTRUCAO_ENVIADA',
+      origem: lead.origem, dataCliente: new Date().toLocaleString('pt-BR'),
+      comprovante: lead.comprovante, status: 'AGUARDANDO_APP_PIX'
+    })});
+  }catch(e){}
 }
 function handleModelClick(modelo){
   window.open(CONFIG.affiliateLinks[modelo],'_blank');
